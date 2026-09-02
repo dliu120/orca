@@ -90,6 +90,25 @@ describe('launchAgentBackgroundSession', () => {
     })
   })
 
+  it('routes isolated Codex state to the worktree without replacing its authenticated home', async () => {
+    const { launchAgentBackgroundSession } = await import('./launch-agent-background-session')
+    mockSpawn.mockResolvedValue({ id: 'pty-1', incarnationId: 'inc-fresh' })
+
+    await launchAgentBackgroundSession({
+      agent: 'codex',
+      worktreeId: 'wt-1',
+      prompt: 'run the automation',
+      agentArgsOverride:
+        "--dangerously-bypass-approvals-and-sandbox -c sqlite_home='~/.orca/tmp/codex-automation/run-1-proof'"
+    })
+
+    const spawnArgs = mockSpawn.mock.calls.at(-1)?.[0]
+    expect(spawnArgs?.command).toContain(
+      "'-c' 'sqlite_home=~/.orca/tmp/codex-automation/run-1-proof'"
+    )
+    expect(spawnArgs?.env?.CODEX_HOME).toBeUndefined()
+  })
+
   it('spawns a PTY first and creates the inactive tab already bound to it', async () => {
     const { launchAgentBackgroundSession } = await import('./launch-agent-background-session')
     mockSpawn.mockResolvedValue({ id: 'pty-1', incarnationId: 'inc-fresh' })
@@ -474,6 +493,31 @@ describe('launchAgentBackgroundSession', () => {
     )
     expect(onExit).toHaveBeenCalledWith('pty-1', 0)
     expect(unsubscribe).toHaveBeenCalled()
+    expect(state.markUnverifiedPtyLoss).not.toHaveBeenCalled()
+  })
+
+  it('keeps the tab bound to its PTY when contact was lost rather than observed', async () => {
+    // Same rule the terminal panes follow: a -1 sentinel retires the transport
+    // only. Clearing the binding would leave a reconnect with nothing to adopt
+    // and let orphan cleanup sweep a tab whose agent may still be running.
+    mockSubscribeToPtyExit.mockReturnValue(vi.fn())
+    const onExit = vi.fn()
+    const { launchAgentBackgroundSession } = await import('./launch-agent-background-session')
+
+    await launchAgentBackgroundSession({
+      agent: 'claude',
+      worktreeId: 'wt-1',
+      prompt: 'run the automation',
+      onExit
+    })
+
+    const sidecar = mockSubscribeToPtyExit.mock.calls[0]?.[1] as (code: number) => void
+    sidecar(-1)
+
+    const tabId = expectReservedAgentBackgroundTabId(mockSpawn)
+    expect(state.clearTabPtyId).not.toHaveBeenCalled()
+    expect(state.markUnverifiedPtyLoss).toHaveBeenCalledWith(tabId)
+    expect(onExit).toHaveBeenCalledWith('pty-1', -1)
   })
 
   it('leaves no tab behind if PTY spawn fails', async () => {
