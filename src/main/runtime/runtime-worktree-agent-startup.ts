@@ -6,6 +6,7 @@ import { repoIsRemote } from '../../shared/agent-launch-remote'
 import { isTuiAgent, TUI_AGENT_CONFIG } from '../../shared/tui-agent-config'
 import { isTuiAgentEnabled, pickTuiAgent } from '../../shared/tui-agent-selection'
 import {
+  resolveAutomationAgentArgs,
   resolveTuiAgentLaunchArgs,
   resolveTuiAgentLaunchEnv
 } from '../../shared/tui-agent-launch-defaults'
@@ -126,6 +127,7 @@ export function buildWorktreeStartupForAgent(
     agent: TuiAgent
     prompt?: string
     launchPreferences?: AgentLaunchPreferences
+    codexAutomationStateId?: string
     toSessionOptions: (
       preferences?: AgentLaunchPreferences
     ) => Parameters<typeof buildAgentStartupPlan>[0]['sessionOptions'] | undefined
@@ -138,11 +140,16 @@ export function buildWorktreeStartupForAgent(
   const platform = environment.getLaunchPlatform()
   const isRemote = repoIsRemote(repo)
   const sessionOptions = environment.toSessionOptions(environment.launchPreferences)
+  const agentArgs = resolveAutomationAgentArgs(
+    agent,
+    settings.agentDefaultArgs,
+    environment.codexAutomationStateId
+  )
   const startupPlan = buildAgentStartupPlan({
     agent,
     prompt: environment.prompt ?? '',
     cmdOverrides: settings.agentCmdOverrides ?? {},
-    agentArgs: resolveTuiAgentLaunchArgs(agent, settings.agentDefaultArgs),
+    agentArgs,
     agentEnv: resolveTuiAgentLaunchEnv(agent, settings.agentDefaultEnv),
     sessionOptions,
     sessionOptionsOverrideAgentArgs: Boolean(sessionOptions),
